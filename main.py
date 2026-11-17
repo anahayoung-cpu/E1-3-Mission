@@ -81,6 +81,31 @@ def is_square_matrix(matrix, n):
 
     return True
 
+def input_matrix(name, n=3):
+    print(f"\n{name} ({n}줄 입력, 공백 구분)")
+
+    matrix = []
+
+    for i in range(n):
+        while True:
+            user_input = input(f"{i + 1}행: ")
+
+            values = user_input.split()
+
+            if len(values) != n:
+                print(f"입력 오류: 숫자 {n}개를 입력하세요.")
+                continue
+
+            try:
+                row = [float(value) for value in values]
+
+                matrix.append(row)
+                break
+
+            except ValueError:
+                print("입력 오류: 숫자만 입력하세요.")
+
+    return matrix
 
 def mac(matrix_a, matrix_b):
     """
@@ -244,10 +269,12 @@ def process_all_patterns(data):
 
 
 def main():
-    print("=== Mini NPU Simulator : 3단계 ===")
+    print("=== 입력 테스트 ===")
 
-    data = load_json_file("data.json")
-    process_all_patterns(data)
+    matrix = input_matrix("십자가 필터")
+
+    print("\n입력 결과:")
+    print(matrix)
 
 
 if __name__ == "__main__":
