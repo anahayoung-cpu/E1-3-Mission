@@ -1,461 +1,241 @@
-# E1-3-Mission
-AI가 계산하는 방식을 흉내 내는 작은 계산기 만들기
+# Mini NPU Simulator
 
+## 1. 프로젝트 개요
 
-*1단계 뼈대 검증(기본 함수들 정상 검증)
-'''text
-import json
-import time
+이 프로젝트는 AI 연산의 기초인 MAC(Multiply-Accumulate, 곱셈-누산) 연산을 Python의 반복문으로 직접 구현한 콘솔 프로그램입니다. 입력 패턴과 두 필터를 같은 위치끼리 곱한 뒤 합산하고, 점수를 비교해 십자가(Cross) 또는 X 패턴을 판정합니다. NumPy와 같은 외부 라이브러리는 사용하지 않았습니다.
 
-EPSILON = 1e-9
+### 학습 목표
 
+- 2차원 리스트를 사용하여 N×N 패턴·필터를 저장하고 검증하기
+- MAC 연산과 필터 점수 비교 원리 이해하기
+- JSON 키와 라벨을 정규화하여 일관되게 분석하기
+- 부동소수점 오차를 고려해 epsilon 기반 동점 판정하기
+- 반복 측정과 연산 횟수로 시간 복잡도 O(N²) 설명하기
+- 데이터/스키마 오류와 판정 정책에 따른 FAIL을 구분하기
 
-def normalize_label(label):
-    """
-    라벨을 표준 형태로 바꾸는 함수
-    예:
-    '+' -> 'Cross'
-    'cross' -> 'Cross'
-    'X' -> 'X'
-    'x' -> 'X'
-    """
-    if not isinstance(label, str):
-        return None
+## 2. 개발 환경 및 파일 구성
 
-    value = label.strip().lower()
+- Python 3.8 이상
+- 사용한 표준 라이브러리: `json`, `time`
+- 외부 라이브러리 사용 없음
 
-    if value == "+" or value == "cross":
-        return "Cross"
-    if value == "x":
-        return "X"
+```text
+E1-3-Mission/
+├── main.py       # 프로그램 실행 및 분석 함수
+├── data.json     # JSON 분석용 필터·패턴 데이터
+└── README.md     # 실행 안내와 결과 리포트
+```
 
-    return None
+`data.json`은 프로그램 실행 시 `main.py`와 같은 작업 폴더에서 읽도록 구현했습니다. 해당 폴더에서 명령어를 실행해야 합니다.
 
+## 3. 실행 방법
 
-def extract_size_from_key(key):
-    """
-    문자열 key에서 크기 숫자를 추출하는 함수
+터미널에서 프로젝트 폴더로 이동한 뒤 다음을 실행합니다.
 
-    예:
-    'size_5' -> 5
-    'size_13_2' -> 13
-    """
-    if not isinstance(key, str):
-        return None
+```bash
+python main.py
+```
 
-    parts = key.split("_")
+실행하면 다음 메뉴가 출력됩니다.
 
-    if len(parts) < 2:
-        return None
-
-    if parts[0] != "size":
-        return None
-
-    try:
-        return int(parts[1])
-    except ValueError:
-        return None
-
-
-def is_number(value):
-    """
-    숫자(int, float)인지 확인
-    """
-    return isinstance(value, (int, float))
-
-
-def is_square_matrix(matrix, n):
-    """
-    n x n 형태의 숫자 행렬인지 검사하는 함수
-
-    예:
-    [[1,2],[3,4]] 와 n=2 이면 True
-    """
-    if not isinstance(matrix, list):
-        return False
-
-    if len(matrix) != n:
-        return False
-
-    for row in matrix:
-        if not isinstance(row, list):
-            return False
-
-        if len(row) != n:
-            return False
-
-        for item in row:
-            if not is_number(item):
-                return False
-
-    return True
-
-
-def main():
-    print("=== Mini NPU Simulator ===")
-    print("기본 설정 완료")
-    print("EPSILON =", EPSILON)
-
-    # 간단한 테스트
-    print("\n[테스트]")
-    print("normalize_label('+') ->", normalize_label("+"))
-    print("normalize_label('x') ->", normalize_label("x"))
-    print("extract_size_from_key('size_13_2') ->", extract_size_from_key("size_13_2"))
-    print("is_square_matrix([[1, 0], [0, 1]], 2) ->", is_square_matrix([[1, 0], [0, 1]], 2))
-
-
-if __name__ == "__main__":
-    main()
-'''
-
-*1단계 python main.py 실행 결과
-'''text
-PS C:\Users\ana23773640\Desktop\E1-3-Mission> python main.py
+```text
 === Mini NPU Simulator ===
-기본 설정 완료
-EPSILON = 1e-09
-
-[테스트]
-normalize_label('+') -> Cross
-normalize_label('x') -> X
-extract_size_from_key('size_13_2') -> 13
-is_square_matrix([[1, 0], [0, 1]], 2) -> True
-'''
-<img width="679" height="260" alt="image" src="https://github.com/user-attachments/assets/f35a0d1f-829b-4c31-9caf-fc214d85a465" />
-
-*2단계 연산 핵심 검증(MAC 계산 정상 확인)
-1. 새로 추가된 함수 3개 (기능 찾아 넣기-추 수정)
-'''text
-def mac(matrix_a, matrix_b):
-    """
-    MAC 연산:
-    같은 위치의 값끼리 곱한 뒤 모두 더한다.
-    """
-    if not isinstance(matrix_a, list) or not isinstance(matrix_b, list):
-        return None
-
-    if len(matrix_a) == 0 or len(matrix_b) == 0:
-        return None
-
-    if len(matrix_a) != len(matrix_b):
-        return None
-
-    n = len(matrix_a)
-
-    if not is_square_matrix(matrix_a, n):
-        return None
-
-    if not is_square_matrix(matrix_b, n):
-        return None
-
-    total = 0
-
-    for i in range(n):
-        for j in range(n):
-            total += matrix_a[i][j] * matrix_b[i][j]
-
-    return total
-
-
-def compare_scores(cross_score, x_score):
-    """
-    점수 비교 함수
-
-    반환값:
-    1  -> Cross 점수가 더 큼
-    -1 -> X 점수가 더 큼
-    0  -> 거의 같음
-    None -> 잘못된 입력
-    """
-    if not is_number(cross_score) or not is_number(x_score):
-        return None
-
-    diff = cross_score - x_score
-
-    if abs(diff) < EPSILON:
-        return 0
-    elif diff > 0:
-        return 1
-    else:
-        return -1
-
-
-def decide_label(cross_score, x_score):
-    """
-    최종 판정 함수
-    """
-    result = compare_scores(cross_score, x_score)
-
-    if result == 1:
-        return "Cross"
-    elif result == -1:
-        return "X"
-    elif result == 0:
-        return "판정 불가"
-    else:
-        return None
-'''
-2. main()에서 2단계에 추가된 테스트
-'''text
-    # 테스트용 필터
-    cross_filter = [
-        [1, 0, 1],
-        [0, 1, 0],
-        [1, 0, 1]
-    ]
-
-    x_filter = [
-        [1, 0, 1],
-        [0, 1, 0],
-        [1, 0, 1]
-    ]
-
-    # 테스트용 입력 패턴 1: Cross 느낌
-    input_cross_like = [
-        [0, 1, 0],
-        [1, 1, 1],
-        [0, 1, 0]
-    ]
-
-    # 테스트용 입력 패턴 2: X 느낌
-    input_x_like = [
-        [1, 0, 1],
-        [0, 1, 0],
-        [1, 0, 1]
-    ]
-
-    print("\n[MAC 테스트 1: Cross 느낌 입력]")
-    cross_score_1 = mac(input_cross_like, cross_filter)
-    x_score_1 = mac(input_cross_like, x_filter)
-    print("Cross score =", cross_score_1)
-    print("X score =", x_score_1)
-    print("판정 =", decide_label(cross_score_1, x_score_1))
-
-    print("\n[MAC 테스트 2: X 느낌 입력]")
-    cross_score_2 = mac(input_x_like, cross_filter)
-    x_score_2 = mac(input_x_like, x_filter)
-    print("Cross score =", cross_score_2)
-    print("X score =", x_score_2)
-    print("판정 =", decide_label(cross_score_2, x_score_2))
-'''
-*2단계 python main.py 실행 결과
-'''text
-PS C:\Users\ana23773640\Desktop\E1-3-Mission> python main.py
-=== Mini NPU Simulator ===
-2단계: MAC + 판정 함수 테스트
-EPSILON = 1e-09
-
-[기본 함수 테스트]
-normalize_label('+') -> Cross
-normalize_label('x') -> X
-extract_size_from_key('size_13_2') -> 13
-is_square_matrix([[1, 0], [0, 1]], 2) -> True
-
-[MAC 테스트 1: Cross 느낌 입력]
-Cross score = 1
-X score = 1
-판정 = 판정 불가
-
-[MAC 테스트 2: X 느낌 입력]
-Cross score = 5
-X score = 5
-판정 = 판정 불가
-'''
-<img width="670" height="523" alt="image" src="https://github.com/user-attachments/assets/5b704f2f-0cb1-4b7d-a697-d23cb2bd69c9" />
-
-3. cross_filter와 x_filter 수정
-'''text
-cross_filter = [
-    [0, 1, 0],
-    [1, 1, 1],
-    [0, 1, 0]
-]
-
-x_filter = [
-    [1, 0, 1],
-    [0, 1, 0],
-    [1, 0, 1]
-]
-'''
-4. filter 수정 결과
-'''text
-PS C:\Users\ana23773640\Desktop\E1-3-Mission> python main.py
-=== Mini NPU Simulator ===
-2단계: MAC + 판정 함수 테스트
-EPSILON = 1e-09
-
-[기본 함수 테스트]
-normalize_label('+') -> Cross
-normalize_label('x') -> X
-extract_size_from_key('size_13_2') -> 13
-is_square_matrix([[1, 0], [0, 1]], 2) -> True
-
-[MAC 테스트 1: Cross 느낌 입력]
-Cross score = 5
-X score = 1
-판정 = Cross
-
-[MAC 테스트 2: X 느낌 입력]
-Cross score = 1
-X score = 5
-판정 = X
-'''
-
-<img width="669" height="518" alt="image" src="https://github.com/user-attachments/assets/d818935d-8816-4e1f-8d2a-e89144b6cd24" />
-
-*3단계 data.json의 patterns를 전부 읽어서 자동 판정
-1. 새로 추가된 함수
-  가. JSON 읽기
-'''text
-def load_json_file(filename):
-    with open(filename, "r", encoding="utf-8") as f:
-        return json.load(f)
-'''
-
-  나. 전체 패턴 자동 처리
-'''text
-def process_all_patterns(data):
-    total_count = 0
-    correct_count = 0
-    tie_count = 0
-
-    patterns = data.get("patterns", {})
-    filters = data.get("filters", {})
-
-    for pattern_key, pattern_info in patterns.items():
-        size = extract_size_from_key(pattern_key)
-        filter_key = f"size_{size}"
-
-        print(f"\n=== {pattern_key} ===")
-
-        if filter_key not in filters:
-            print(f"필터 없음: {filter_key}")
-            continue
-
-        input_matrix = pattern_info["input"]
-        expected = normalize_label(pattern_info["expected"])
-
-        cross_filter = filters[filter_key]["cross"]
-        x_filter = filters[filter_key]["x"]
-
-        if not is_square_matrix(input_matrix, size):
-            print("입력 행렬 크기 오류")
-            continue
-
-        if not is_square_matrix(cross_filter, size):
-            print("cross 필터 크기 오류")
-            continue
-
-        if not is_square_matrix(x_filter, size):
-            print("x 필터 크기 오류")
-            continue
-
-        predicted, cross_score, x_score = predict_label(input_matrix, cross_filter, x_filter)
-
-        total_count += 1
-
-        if predicted == "판정 불가":
-            tie_count += 1
-
-        is_correct = (predicted == expected)
-        if is_correct:
-            correct_count += 1
-
-        print("크기 =", size)
-        print("정답 =", expected)
-        print("예측 =", predicted)
-        print("Cross score =", cross_score)
-        print("X score =", x_score)
-        print("결과 =", "정답" if is_correct else "오답")
-
-    print("\n=== 전체 결과 ===")
-    print("총 패턴 수 =", total_count)
-    print("정답 수 =", correct_count)
-    print("동점 수 =", tie_count)
-
-    if total_count > 0:
-        accuracy = correct_count / total_count
-        print("정확도 =", accuracy)
-    else:
-        print("처리된 패턴이 없습니다.")
-
-'''
-  다. 3단계 검증용 main()으로 수정 
-'''text
-def main():
-    print("=== Mini NPU Simulator : 3단계 ===")
-
-    data = load_json_file("data.json")
-    process_all_patterns(data)
-
-
-if __name__ == "__main__":
-    main()
-
-'''
-
-2. 2단계 python main.py 실행 결과
-'''text
-PS C:\Users\ana23773640\Desktop\E1-3-Mission> python main.py
-=== Mini NPU Simulator : 3단계 ===
-
-=== size_5_1 ===
-크기 = 5
-정답 = X
-예측 = 판정 불가
-Cross score = 0.9
-X score = 0.8999999999999999
-결과 = 오답
-
-=== size_5_2 ===
-크기 = 5
-정답 = Cross
-예측 = Cross
-Cross score = 8.9
-X score = 0.1
-결과 = 정답
-
-=== size_13_1 ===
-크기 = 13
-정답 = X
-예측 = X
-Cross score = 0.3
-X score = 14.700000000000008
-결과 = 정답
-
-=== size_13_2 ===
-크기 = 13
-정답 = Cross
-예측 = 판정 불가
-Cross score = 7.499999999999997
-X score = 7.5
-결과 = 오답
-
-=== size_25_1 ===
-크기 = 25
-정답 = X
-예측 = 판정 불가
-Cross score = 4.9
-X score = 4.899999999999999
-결과 = 오답
-
-=== size_25_2 ===
-크기 = 25
-정답 = Cross
-예측 = Cross
-Cross score = 52.9
-X score = 0.1
-결과 = 정답
-
-=== 전체 결과 ===
-총 패턴 수 = 6
-정답 수 = 3
-동점 수 = 3
-정확도 = 0.5
-'''
-
-<img width="674" height="1455" alt="image" src="https://github.com/user-attachments/assets/b533cd8d-68ee-40de-97eb-25b11bc49195" />
 
+[모드 선택]
+1. 사용자 입력 (3x3)
+2. data.json 분석
+선택:
+```
 
+### 모드 1: 사용자 입력 (3×3)
 
+1. `1`을 선택합니다.
+2. 필터 A의 숫자 3개씩 3행을 입력합니다.
+3. 필터 B도 같은 방식으로 입력합니다.
+4. 두 필터가 리스트로 저장된 결과를 확인합니다.
+5. 판정할 패턴을 3행 입력합니다.
+6. A/B MAC 점수, 판정(A/B/판정 불가), 크기와 10회 평균 연산 시간(ms)을 확인합니다.
 
+예시 입력:
+
+```text
+필터 A
+0 1 0
+1 1 1
+0 1 0
+
+필터 B
+1 0 1
+0 1 0
+1 0 1
+
+패턴
+0 1 0
+1 1 1
+0 1 0
+```
+
+예상 점수와 판정:
+
+```text
+A 점수: 5.0
+B 점수: 1.0
+판정: A
+MAC 연산 횟수: 9
+```
+
+숫자를 3개보다 적거나 많게 입력하거나 문자(`a` 등)를 입력하면 오류 안내를 출력하고 **같은 행을 다시 입력**받습니다. `float()`로 변환하므로 정수와 실수 입력을 처리할 수 있습니다.
+
+### 모드 2: data.json 분석
+
+`2`를 선택하면 `data.json`의 `filters`와 `patterns`를 읽습니다. `size_5`, `size_13`, `size_25`에 대응하는 필터를 사용하고, `size_N_idx` 형태의 패턴 키에서 크기 `N`을 추출합니다. 각 패턴의 `input`과 `expected`를 검증한 뒤 MAC 점수를 계산합니다. 케이스별 `Cross`/`X`/`UNDECIDED` 판정 및 `PASS`/`FAIL`을 출력하고, 성능 분석 표와 전체 요약을 표시합니다.
+
+## 4. 구현 내용
+
+### 4.1 행렬 구조 및 검증
+
+패턴과 필터는 숫자로 이루어진 2차원 리스트로 저장합니다. `is_square_matrix(matrix, n)`는 리스트 여부, 행 개수, 각 행의 열 개수, 각 원소의 숫자 자료형을 검사합니다. 사용자 입력 모드의 `input_matrix()`는 `input()`, `split()`, `float()`와 `try/except`를 이용해 한 행씩 검증하고 저장합니다.
+
+### 4.2 MAC 연산
+
+`mac(matrix_a, matrix_b)`는 두 배열의 크기·형식을 확인하고 다음처럼 이중 반복문으로 같은 위치의 값을 곱해 누적합니다.
+
+```python
+n = len(matrix_a)
+total = 0
+for i in range(n):
+    for j in range(n):
+        total += matrix_a[i][j] * matrix_b[i][j]
+return total
+```
+
+수식으로는 다음과 같습니다.
+
+**MAC 점수 = Σ(i=0…N−1) Σ(j=0…N−1) 입력[i][j] × 필터[i][j]**
+
+3×3 십자가 패턴을 십자가 필터와 비교하면 5점, X 필터와 비교하면 1점이 나옵니다. 따라서 십자가 쪽 필터 점수가 높습니다. 이 점수는 위치별 곱의 합이며, 별도의 정규화된 거리 척도는 아닙니다.
+
+### 4.3 JSON 라벨 정규화
+
+`normalize_label(label)`은 앞뒤 공백을 제거하고 소문자로 바꾼 다음, 다음의 표준 라벨로 통일합니다.
+
+| 원본 표기 | 내부 표준 라벨 |
+|---|---|
+| `+`, `cross`, `Cross` | `Cross` |
+| `x`, `X` | `X` |
+
+`expected` 값과 필터 키에 동일한 정규화 규칙을 적용해 표기 방식 때문에 판정 비교가 틀리지 않도록 했습니다. 알 수 없는 값은 `None`으로 처리하여 해당 케이스를 FAIL로 기록합니다.
+
+### 4.4 epsilon 기반 동점 비교
+
+부동소수점 계산에서는 수학적으로 같은 값이어도 저장·계산 과정에서 매우 작은 차이가 나타날 수 있습니다. 이를 고려해 `EPSILON = 1e-9`로 설정했습니다.
+
+```python
+if abs(cross_score - x_score) < EPSILON:
+    return 0   # 동점
+```
+
+- Cross 점수가 더 높으면 `Cross`(사용자 입력 모드에서는 A)
+- X 점수가 더 높으면 `X`(사용자 입력 모드에서는 B)
+- 점수 차이가 epsilon보다 작으면 `UNDECIDED`(사용자 입력 모드에서는 판정 불가)
+
+JSON 모드에서 판정 결과와 `expected`의 표준 라벨이 일치할 때만 PASS로 처리합니다. `expected`가 Cross 또는 X인데 판정이 `UNDECIDED`이면 FAIL입니다.
+
+### 4.5 성능 측정
+
+`measure_mac_time()`은 `time.perf_counter()`로 `mac()` 호출 직전과 직후의 시간을 측정합니다. 각 행렬 크기에서 10회 반복한 경과 시간의 평균을 구하고 `×1000`하여 밀리초(ms)로 표시합니다. 출력·입력·파일 읽기 시간은 측정 구간에 포함하지 않습니다. 현재 `mac()`이 자체적으로 행렬 형식을 검증하므로, 측정값에는 **입력 행렬 검증과 곱셈·누적 연산 시간**이 모두 포함됩니다.
+
+성능 비교에는 `generate_matrix(n)`으로 만든 동일 크기의 **모든 원소가 1인 두 행렬**을 사용했습니다. 이 표는 JSON에 저장된 실제 패턴의 인식 성능이 아니라 행렬 크기에 따른 함수 실행 시간을 비교한 것입니다.
+
+## 5. 결과 리포트
+
+### 5.1 원본 JSON 데이터 분석 결과
+
+의도적 오류 테스트를 마친 후 **원본 `data.json` 기준으로 관찰한 실행 결과**입니다.
+
+| 케이스 | expected | 판정 | 결과 | 비고 |
+|---|---|---|---|---|
+| `size_5_1` | X | UNDECIDED | FAIL | epsilon 동점 |
+| `size_5_2` | Cross | Cross | PASS | 일치 |
+| `size_13_1` | X | X | PASS | 일치 |
+| `size_13_2` | Cross | UNDECIDED | FAIL | epsilon 동점 |
+| `size_25_1` | X | UNDECIDED | FAIL | epsilon 동점 |
+| `size_25_2` | Cross | Cross | PASS | 일치 |
+
+- **총 테스트: 6개**
+- **PASS: 3개**
+- **FAIL: 3개**
+
+### 5.2 FAIL 케이스 및 원인 분석 (10줄 이상)
+
+1. `size_5_1`의 Cross 점수는 `0.9`, X 점수는 `0.8999999999999999`로 출력되었습니다.
+2. 두 값의 차이는 `1e-9`보다 작아 epsilon 정책에 따라 `UNDECIDED`로 판정되었습니다.
+3. `size_5_1`의 expected는 `X`이므로 판정과 일치하지 않아 FAIL입니다.
+4. `size_13_2`는 Cross `7.499999999999997`, X `7.5`로 매우 가깝게 계산되었습니다.
+5. `size_13_2`도 epsilon 기준 동점이며 expected가 `Cross`이므로 FAIL입니다.
+6. `size_25_1`은 Cross `4.9`, X `4.899999999999999`로 매우 가까워 동점 처리되었습니다.
+7. `size_25_1`의 expected는 `X`이므로 이 역시 FAIL입니다.
+8. 이 세 실패는 프로그램 비정상 종료나 행렬 계산 오류가 아니라 **정의한 수치 비교 정책에 따른 판정 불일치**입니다.
+9. Python의 부동소수점 연산에서는 십진 소수를 이진 부동소수점으로 정확하게 표현하지 못해 미세한 값 차이가 생길 수 있습니다.
+10. epsilon 값을 매우 작게 바꾸어 PASS 수를 늘리기보다, 주어진 비교 기준을 유지하고 동점 발생 사유를 기록하는 것이 적절하다고 판단했습니다.
+11. 데이터/스키마 문제를 검증하기 위해 `size_5_1`의 expected를 임시로 `triangle`로 바꾸었고, `expected 라벨 오류`로 FAIL 처리됨을 확인했습니다.
+12. `size_5_2`의 입력 행에서 숫자 하나를 삭제했을 때 `입력 행렬 크기 또는 값 오류`로 FAIL 처리됨을 확인했습니다.
+13. `size_5` 필터를 임시로 제거했을 때 `size_5_1`, `size_5_2`가 `필터 없음: size_5`로 FAIL 처리되었으며 이후 케이스 분석이 계속되었습니다.
+14. 따라서 관찰된 실패를 **수치 비교 정책 문제**, **라벨·스키마·크기 데이터 문제**, **프로그램 로직 문제**로 나누어 진단했습니다. 현재 정상 원본 데이터에서 확인된 FAIL은 수치 비교 정책에 해당합니다.
+15. 의도적 오류 테스트 후에는 `data.json`을 원본으로 복원해 제출 데이터가 변경되지 않도록 해야 합니다.
+
+### 5.3 크기별 성능 분석 결과
+
+정상 데이터 분석 과정에서 기록한 **10회 반복 측정 중 한 번의 실행 결과**입니다. 실행할 때마다 수치는 달라질 수 있습니다.
+
+| 크기(N×N) | 평균 연산 시간(ms) | 위치별 곱셈 횟수(N²) |
+|---|---:|---:|
+| 3×3 | 0.011330 | 9 |
+| 5×5 | 0.015480 | 25 |
+| 13×13 | 0.161850 | 169 |
+| 25×25 | 0.571670 | 625 |
+
+### 5.4 시간 복잡도 O(N²) 분석 (10줄 이상)
+
+1. N×N 행렬의 MAC 연산은 모든 행과 열 위치에 대해 곱셈과 누적 덧셈을 수행합니다.
+2. `mac()`에는 `for i in range(n)`과 그 안의 `for j in range(n)`이 있습니다.
+3. 바깥 반복문은 N번 실행되고, 안쪽 반복문도 각 바깥 반복마다 N번 실행됩니다.
+4. 따라서 한 번의 MAC 계산에서 위치별 곱셈은 총 N×N = N²번 수행됩니다.
+5. 3×3 행렬은 9번, 5×5 행렬은 25번의 곱셈이 필요합니다.
+6. 13×13 행렬은 169번, 25×25 행렬은 625번의 곱셈이 필요합니다.
+7. 행렬 한 변의 길이가 커질수록 처리해야 할 원소의 수가 제곱 비율로 늘어납니다.
+8. 이번 실행에서 평균 측정 시간은 3×3의 `0.011330 ms`에서 25×25의 `0.571670 ms`로 증가했습니다.
+9. 25×25의 연산 횟수는 3×3의 약 69.4배이고, 이번 측정 시간은 약 50.5배입니다.
+10. 두 비율이 정확히 일치하지 않는 이유는 Python 함수 호출, 행렬 검증, 타이머 측정 오버헤드 및 운영체제 실행 환경 등이 영향을 주기 때문입니다.
+11. 또한 각 크기당 10회만 측정했으므로 작은 행렬에서는 측정 변동성이 상대적으로 크게 나타날 수 있습니다.
+12. 실제로 시간 복잡도 O(N²)의 직접적인 근거는 측정 시간의 비율이 아니라 **모든 N×N 위치를 방문하는 중첩 반복문 구조**입니다.
+13. `mac()` 내부의 행렬 형식 검증 또한 N²개의 요소를 검사하므로, 검증을 포함한 현재 함수의 전체 시간 복잡도 역시 O(N²)입니다.
+14. 따라서 본 시뮬레이터는 행렬 크기가 증가함에 따라 MAC 계산량과 처리 시간이 대체로 늘어나는 특성을 확인하는 데 의미가 있습니다.
+
+## 6. 테스트 및 재현성
+
+| 테스트 | 확인 결과 |
+|---|---|
+| 모드 1: 3×3 십자가 필터·X 필터와 십자가 패턴 입력 | A 5.0 / B 1.0 / A 판정 |
+| 입력값 개수가 3개가 아닌 경우 | 오류 안내 후 해당 행 재입력 |
+| `a` 등 숫자가 아닌 문자 입력 | 오류 안내 후 해당 행 재입력 |
+| 모드 2: 원본 JSON 데이터 분석 | 총 6 / PASS 3 / FAIL 3 |
+| 알 수 없는 expected 라벨 | 케이스별 FAIL, 다음 케이스 계속 분석 |
+| 패턴 행의 원소 수 불일치 | 케이스별 FAIL, 다음 케이스 계속 분석 |
+| `size_5` 필터 누락 | 관련 케이스 2개 FAIL, 다른 크기 계속 분석 |
+| 3×3, 5×5, 13×13, 25×25 성능 측정 | 10회 평균(ms) 및 N² 출력 |
+
+의도적 오류를 넣는 테스트는 **백업본을 만든 뒤 임시로만** 수행하고, 최종 실행과 제출 전에는 원본 `data.json`을 복원합니다. 측정 시간은 CPU 상태 및 실행 환경에 따라 달라질 수 있습니다.
+
+## 7. 구현상 한계 및 개선 방향
+
+- 현재 콘솔 입력에서는 입력 숫자의 개수와 숫자 변환 여부를 검증하지만, 입력 중 강제 종료나 EOF 같은 상황은 별도로 처리하지 않았습니다.
+- 현재 코드에서 `data.json` 파일 자체가 없거나 JSON 문법이 잘못된 경우를 위한 파일 읽기 예외 처리는 별도로 보완할 수 있습니다.
+- 현재 `extract_size_from_key()`는 크기 숫자를 추출하지만 `size_N_idx` 전체 문자열의 엄격한 규칙까지 검증하지는 않습니다.
+- 현재 `is_number()`는 Python 특성상 불리언(`True`, `False`)도 숫자로 취급하므로, 필요 시 엄격한 검증으로 개선할 수 있습니다.
+- 추후 MAC 연산에서 데이터 검증 부분과 실제 곱셈·누적 부분을 분리하면 더 순수한 계산 성능을 측정할 수 있습니다.
+- 선택 보너스 과제로 행렬의 1차원 평탄화 방식과 원본 2차원 접근 방식의 시간을 동일 조건에서 비교하거나, Cross/X 패턴 생성기를 추가할 수 있습니다.
+
+## 8. 학습 소감
+
+이번 미션을 통해 Python의 함수, 리스트, 이중 반복문, 조건문, 예외 처리, JSON 파일 로드, 라벨 정규화와 시간 측정을 함께 연습했습니다. 특히 예상과 다른 결과가 나왔을 때 프로그램 오류인지, 입력 데이터 문제인지, epsilon 비교 정책에 따른 결과인지를 구분하여 확인하는 과정이 중요하다는 점을 이해했습니다.
