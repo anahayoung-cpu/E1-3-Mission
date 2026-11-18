@@ -4,26 +4,24 @@ import time
 EPSILON = 1e-9
 
 
-def normalize_label(label): # 라벨 정규화 (이름 맞추기)
-    """
-    라벨을 표준 형태로 바꾸는 함수
-    예:
-    '+' -> 'Cross'
-    'cross' -> 'Cross'
-    'X' -> 'X'
-    'x' -> 'X'
-    """
+
+LABEL_MAP = {
+    "+": "Cross",
+    "cross": "Cross",
+    "plus": "Cross",
+    "십자가": "Cross",
+    "x": "X"
+}
+
+
+def normalize_label(label):
     if not isinstance(label, str):
         return None
 
     value = label.strip().lower()
 
-    if value == "+" or value == "cross":
-        return "Cross"
-    if value == "x":
-        return "X"
+    return LABEL_MAP.get(value)
 
-    return None
 
 
 def extract_size_from_key(key): # key size 추출
